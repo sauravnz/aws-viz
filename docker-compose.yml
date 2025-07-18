@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  aws-viz:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - CORS_ORIGIN=*
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "com.aws-viz.description=AWS Infrastructure Visualization Tool"
+      - "com.aws-viz.version=1.0.0"
+
+  # Development services (uncomment for development)
+  # aws-viz-dev:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.dev
+  #   ports:
+  #     - "3000:3000"
+  #     - "3001:3001"
+  #   volumes:
+  #     - ./client:/app/client
+  #     - ./server:/app/server
+  #     - ./shared:/app/shared
+  #     - /app/client/node_modules
+  #     - /app/server/node_modules
+  #   environment:
+  #     - NODE_ENV=development
+  #     - CORS_ORIGIN=http://localhost:3000
+  #   command: npm run dev
+
+networks:
+  default:
+    name: aws-viz-network 
