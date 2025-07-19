@@ -132,4 +132,180 @@ export interface ResourceGroup {
   type: 'vpc' | 'region' | 'availability-zone';
   resources: AwsResource[];
   children?: ResourceGroup[];
+}
+
+// Security Group Rule Types
+export interface SecurityGroupRule {
+  protocol: string; // tcp, udp, icmp, -1 (all)
+  fromPort?: number;
+  toPort?: number;
+  cidrBlocks?: string[];
+  sourceSecurityGroupId?: string;
+  description?: string;
+  direction: 'inbound' | 'outbound';
+}
+
+export interface SecurityGroupDetails {
+  groupId: string;
+  groupName: string;
+  description: string;
+  vpcId?: string;
+  inboundRules: SecurityGroupRule[];
+  outboundRules: SecurityGroupRule[];
+}
+
+// Network ACL Types
+export interface NetworkAclRule {
+  ruleNumber: number;
+  protocol: string;
+  ruleAction: 'allow' | 'deny';
+  portRange?: {
+    from?: number;
+    to?: number;
+  };
+  cidrBlock: string;
+  direction: 'inbound' | 'outbound';
+}
+
+export interface NetworkAclDetails {
+  networkAclId: string;
+  vpcId: string;
+  isDefault: boolean;
+  subnetIds: string[];
+  rules: NetworkAclRule[];
+}
+
+// Zone Grouping Types
+export interface ZoneGroup {
+  id: string;
+  name: string;
+  type: 'vpc' | 'subnet' | 'availability-zone';
+  cidrBlock?: string;
+  bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  color: string;
+  children?: ZoneGroup[];
+  resources: string[]; // Array of resource IDs
+}
+
+// Enhanced Link with Security Information
+export interface SecurityAwareLink extends GraphLink {
+  securityInfo?: {
+    allowedPorts: string[];
+    protocols: string[];
+    direction: 'bidirectional' | 'source-to-target' | 'target-to-source';
+    securityGroupIds: string[];
+  };
+}
+
+// Enhanced Graph Data with Security Context
+export interface SecurityAwareGraphData extends GraphData {
+  links: SecurityAwareLink[];
+  securityGroups: SecurityGroupDetails[];
+  networkAcls: NetworkAclDetails[];
+  zoneGroups: ZoneGroup[];
+  metadata: GraphData['metadata'] & {
+    securitySummary: {
+      totalSecurityGroups: number;
+      totalNacls: number;
+      exposedPorts: string[];
+      publicResources: number;
+    };
+  };
+}
+
+// Visualization View Modes
+export enum ViewMode {
+  BUSINESS_FLOW = 'business-flow',
+  INFRASTRUCTURE_DETAIL = 'infrastructure-detail'
+}
+
+// Business Flow Specific Types
+export interface BusinessFlowNode extends GraphNode {
+  flowLayer: 'entry' | 'security' | 'compute' | 'data' | 'external';
+  isBusinessCritical: boolean;
+  publicAccess?: boolean;
+}
+
+export interface BusinessFlowLink extends GraphLink {
+  flowType: 'traffic' | 'data' | 'management';
+  isMainPath: boolean;
+  protocols?: string[];
+  ports?: string[];
+}
+
+export interface ContainerGroup {
+  id: string;
+  name: string;
+  type: 'vpc' | 'subnet' | 'availability-zone';
+  bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  style: {
+    fill?: string;
+    stroke: string;
+    strokeWidth: number;
+    strokeDashArray?: string;
+    opacity: number;
+  };
+  label: {
+    text: string;
+    subtext?: string;
+    position: { x: number; y: number };
+  };
+  children?: ContainerGroup[];
+  containedNodes: string[]; // Node IDs
+}
+
+export interface BusinessFlowGraphData extends GraphData {
+  viewMode: ViewMode.BUSINESS_FLOW;
+  nodes: BusinessFlowNode[];
+  links: BusinessFlowLink[];
+  containers: ContainerGroup[];
+  flowPaths: {
+    id: string;
+    name: string;
+    nodes: string[];
+    description: string;
+  }[];
+  securityContext: {
+    exposedServices: string[];
+    publicResources: string[];
+    securityGroups: SecurityGroupDetails[];
+    criticalPaths: string[];
+  };
+  pricingData?: Record<string, {
+    pricePerHour?: number;
+    pricePerMonth?: number;
+    pricePerGB?: number;
+    currency: string;
+    unit: string;
+    instanceType?: string;
+  }>;
+}
+
+export interface InfrastructureDetailGraphData extends SecurityAwareGraphData {
+  viewMode: ViewMode.INFRASTRUCTURE_DETAIL;
+}
+
+// Visualization Config
+export interface VisualizationConfig {
+  viewMode: ViewMode;
+  showSecurityGroups: boolean;
+  showNetworkAcls: boolean;
+  showZoneGrouping: boolean;
+  showPortLabels: boolean;
+  showDirectionalArrows: boolean;
+  showContainers: boolean;
+  textSpacing: number;
+  nodeSpacing: number;
+  layerSpacing: number;
+  flowSpacing: number;
 } 

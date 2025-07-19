@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { ScanRequest, ScanResponse } from '../../../shared/types';
+import { ScanRequest, ScanResponse, ViewMode } from '../../../shared/types';
 import { AwsResourceScanner } from '../services/aws-scanner';
 import { GraphBuilder } from '../services/graph-builder';
 
@@ -35,11 +35,11 @@ router.post('/scan', async (req, res) => {
     const resources = await scanner.scanAllResources();
     console.log(`✅ Discovered ${resources.length} AWS resources`);
     
-    // Build graph from resources
-    const graphBuilder = new GraphBuilder();
-    const graphData = graphBuilder.buildGraph(resources, region);
+    // Build graph from resources - default to business flow for now
+    const graphBuilder = new GraphBuilder(region);
+    const graphData = await graphBuilder.buildBusinessFlowGraph(resources, region);
     
-    console.log(`📊 Generated graph with ${graphData.nodes.length} nodes and ${graphData.links.length} links`);
+    console.log(`📊 Generated business flow graph with ${graphData.nodes.length} nodes and ${graphData.links.length} links`);
     
     const response: ScanResponse = {
       success: true,

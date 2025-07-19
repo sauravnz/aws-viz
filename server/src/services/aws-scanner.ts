@@ -8,7 +8,8 @@ import {
   DescribeNatGatewaysCommand,
   DescribeSecurityGroupsCommand,
   DescribeNetworkInterfacesCommand,
-  DescribeVolumesCommand
+  DescribeVolumesCommand,
+  DescribeNetworkAclsCommand
 } from '@aws-sdk/client-ec2';
 import { S3Client, ListBucketsCommand, GetBucketLocationCommand } from '@aws-sdk/client-s3';
 import { RDSClient, DescribeDBInstancesCommand } from '@aws-sdk/client-rds';
@@ -17,7 +18,7 @@ import { IAMClient, ListRolesCommand, GetRoleCommand } from '@aws-sdk/client-iam
 import { ElasticLoadBalancingV2Client, DescribeLoadBalancersCommand } from '@aws-sdk/client-elastic-load-balancing-v2';
 import { EKSClient, ListClustersCommand, DescribeClusterCommand, ListNodegroupsCommand, DescribeNodegroupCommand, ListFargateProfilesCommand, DescribeFargateProfileCommand } from '@aws-sdk/client-eks';
 
-import { AwsCredentials, AwsResource, ResourceType } from '../../../shared/types';
+import { AwsCredentials, AwsResource, ResourceType, SecurityGroupDetails, SecurityGroupRule, NetworkAclDetails, NetworkAclRule } from '../../../shared/types';
 
 export class AwsResourceScanner {
   private ec2Client: EC2Client;
@@ -65,6 +66,7 @@ export class AwsResourceScanner {
         internetGateways,
         natGateways,
         networkInterfaces,
+        networkAcls,
         loadBalancers,
         s3Buckets,
         rdsInstances,
@@ -83,6 +85,7 @@ export class AwsResourceScanner {
         this.scanInternetGateways(),
         this.scanNatGateways(),
         this.scanNetworkInterfaces(),
+        this.scanNetworkAcls(),
         this.scanLoadBalancers(),
         this.scanS3Buckets(),
         this.scanRDSInstances(),
@@ -96,8 +99,8 @@ export class AwsResourceScanner {
       // Collect all fulfilled results
       const results = [
         vpcs, subnets, instances, volumes, securityGroups, routeTables,
-        internetGateways, natGateways, networkInterfaces, loadBalancers,
-        s3Buckets, rdsInstances, lambdaFunctions, iamRoles,
+        internetGateways, natGateways, networkInterfaces, networkAcls,
+        loadBalancers, s3Buckets, rdsInstances, lambdaFunctions, iamRoles,
         eksClusters, eksNodegroups, eksFargateProfiles
       ];
 
@@ -113,6 +116,43 @@ export class AwsResourceScanner {
     } catch (error) {
       console.error('Error scanning AWS resources:', error);
       throw error;
+    }
+  }
+
+  async scanSecurityGroupDetails(): Promise<SecurityGroupDetails[]> {
+    try {
+      const command = new DescribeSecurityGroupsCommand({});
+      const response = await this.ec2Client.send(command);
+      
+      return (response.SecurityGroups || []).map(sg => ({
+        groupId: sg.GroupId!,
+        groupName: sg.GroupName!,
+        description: sg.Description || '',
+        vpcId: sg.VpcId,
+        inboundRules: (sg.IpPermissions || []).map(rule => this.parseSecurityGroupRule(rule, 'inbound')),
+        outboundRules: (sg.IpPermissionsEgress || []).map(rule => this.parseSecurityGroupRule(rule, 'outbound'))
+      }));
+    } catch (error) {
+      console.error('Error scanning Security Group details:', error);
+      return [];
+    }
+  }
+
+  async scanNetworkAclDetails(): Promise<NetworkAclDetails[]> {
+    try {
+      const command = new DescribeNetworkAclsCommand({});
+      const response = await this.ec2Client.send(command);
+      
+      return (response.NetworkAcls || []).map(nacl => ({
+        networkAclId: nacl.NetworkAclId!,
+        vpcId: nacl.VpcId!,
+        isDefault: nacl.IsDefault || false,
+        subnetIds: (nacl.Associations || []).map(assoc => assoc.SubnetId!).filter(Boolean),
+        rules: (nacl.Entries || []).map(entry => this.parseNetworkAclRule(entry))
+      }));
+    } catch (error) {
+      console.error('Error scanning Network ACL details:', error);
+      return [];
     }
   }
 
@@ -256,7 +296,11 @@ export class AwsResourceScanner {
         metadata: {
           description: sg.Description,
           inboundRules: sg.IpPermissions?.length || 0,
-          outboundRules: sg.IpPermissionsEgress?.length || 0
+          outboundRules: sg.IpPermissionsEgress?.length || 0,
+          detailedRules: {
+            inbound: (sg.IpPermissions || []).map(rule => this.parseSecurityGroupRule(rule, 'inbound')),
+            outbound: (sg.IpPermissionsEgress || []).map(rule => this.parseSecurityGroupRule(rule, 'outbound'))
+          }
         }
       }));
     } catch (error) {
@@ -365,6 +409,32 @@ export class AwsResourceScanner {
       }));
     } catch (error) {
       console.error('Error scanning Network Interfaces:', error);
+      return [];
+    }
+  }
+
+  private async scanNetworkAcls(): Promise<AwsResource[]> {
+    try {
+      const command = new DescribeNetworkAclsCommand({});
+      const response = await this.ec2Client.send(command);
+      
+      return (response.NetworkAcls || []).map(nacl => ({
+        id: nacl.NetworkAclId!,
+        name: this.getResourceName(nacl.Tags) || nacl.NetworkAclId!,
+        type: ResourceType.SECURITY_GROUP, // We'll add a NETWORK_ACL type later
+        region: this.region,
+        arn: `arn:aws:ec2:${this.region}:*:network-acl/${nacl.NetworkAclId}`,
+        vpcId: nacl.VpcId,
+        tags: this.parseTags(nacl.Tags),
+        metadata: {
+          isDefault: nacl.IsDefault,
+          associatedSubnets: (nacl.Associations || []).map(assoc => assoc.SubnetId).filter(Boolean),
+          rulesCount: nacl.Entries?.length || 0,
+          detailedRules: (nacl.Entries || []).map(entry => this.parseNetworkAclRule(entry))
+        }
+      }));
+    } catch (error) {
+      console.error('Error scanning Network ACLs:', error);
       return [];
     }
   }
@@ -710,5 +780,51 @@ export class AwsResourceScanner {
       }
     });
     return result;
+  }
+
+  private getResourceName(tags?: Array<{Key?: string, Value?: string}>): string | null {
+    if (!tags) return null;
+    const nameTag = tags.find(tag => tag.Key === 'Name');
+    return nameTag?.Value || null;
+  }
+
+  private parseSecurityGroupRule(rule: any, direction: 'inbound' | 'outbound'): SecurityGroupRule {
+    const protocol = rule.IpProtocol === '-1' ? 'all' : rule.IpProtocol;
+    
+    // Extract CIDR blocks
+    const cidrBlocks = (rule.IpRanges || []).map((range: any) => range.CidrIp).filter(Boolean);
+    
+    // Extract source security group
+    const sourceSecurityGroupId = rule.UserIdGroupPairs?.[0]?.GroupId;
+    
+    // Extract port range
+    const fromPort = rule.FromPort;
+    const toPort = rule.ToPort;
+    
+    return {
+      protocol,
+      fromPort,
+      toPort,
+      cidrBlocks: cidrBlocks.length > 0 ? cidrBlocks : undefined,
+      sourceSecurityGroupId,
+      description: rule.Description || `${direction} rule for ${protocol}`,
+      direction
+    };
+  }
+
+  private parseNetworkAclRule(entry: any): NetworkAclRule {
+    const protocol = entry.Protocol === '-1' ? 'all' : entry.Protocol;
+    
+    return {
+      ruleNumber: entry.RuleNumber || 0,
+      protocol,
+      ruleAction: entry.RuleAction === 'allow' ? 'allow' : 'deny',
+      portRange: entry.PortRange ? {
+        from: entry.PortRange.From,
+        to: entry.PortRange.To
+      } : undefined,
+      cidrBlock: entry.CidrBlock || '0.0.0.0/0',
+      direction: entry.Egress ? 'outbound' : 'inbound'
+    };
   }
 } 

@@ -216,12 +216,68 @@ body {
 
 .tooltip-title {
   font-weight: 600;
-  margin-bottom: 5px;
+  margin-bottom: 8px;
   color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+  padding-bottom: 4px;
+  font-size: 14px;
 }
 
 .tooltip-info {
   margin: 3px 0;
+  opacity: 0.9;
+}
+
+/* Enhanced security-aware tooltip styles */
+.tooltip-security {
+  margin: 3px 0;
+  color: #FFC107;
+  font-weight: bold;
+}
+
+.tooltip-warning {
+  margin: 3px 0;
+  color: #FF9800;
+  font-weight: bold;
+}
+
+/* VPC zone grouping styles */
+.vpc-zone {
+  fill: none;
+  stroke: #9C27B0;
+  stroke-width: 2;
+  stroke-dasharray: 5,5;
+  opacity: 0.7;
+}
+
+.subnet-zone {
+  fill: none;
+  stroke: #FF9800;
+  stroke-width: 2;
+  stroke-dasharray: 3,3;
+  opacity: 0.6;
+}
+
+/* Security indicators */
+.security-indicator {
+  fill: #FF5722;
+  opacity: 0.8;
+}
+
+.nacl-indicator {
+  fill: none;
+  stroke: #FF9800;
+  stroke-width: 2;
+  stroke-dasharray: 3,3;
+}
+
+/* Link port annotations */
+.port-annotation {
+  font-size: 8px;
+  fill: #333;
+  text-anchor: middle;
+  background: white;
+  opacity: 0.9;
 }
 
 @media (max-width: 768px) {
